@@ -52,7 +52,7 @@ const char *get_status_message(enum status_code code);
 typedef void (*die_fn)(void);
 extern die_fn die_callback;
 void TIG_NORETURN die(const char *err, ...) PRINTF_LIKE(1, 2);
-void warn(const char *msg, ...) PRINTF_LIKE(1, 2);
+int warn(const char *msg, ...) PRINTF_LIKE(1, 2);
 
 /*
  * Enumerations

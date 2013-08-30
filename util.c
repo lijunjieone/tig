@@ -27,7 +27,7 @@ get_status_message(enum status_code code)
 	return status_messages[code];
 }
 
-void
+int
 warn(const char *msg, ...)
 {
 	va_list args;
@@ -37,6 +37,7 @@ warn(const char *msg, ...)
 	vfprintf(stderr, msg, args);
 	fputs("\n", stderr);
 	va_end(args);
+	return ERR;
 }
 
 die_fn die_callback = NULL;

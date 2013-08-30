@@ -184,7 +184,7 @@ endif
 
 override CPPFLAGS += $(COMPAT_CPPFLAGS)
 
-TIG_OBJS = tig.o util.o io.o graph.o refs.o request.o line.o keys.o repo.o $(COMPAT_OBJS)
+TIG_OBJS = tig.o util.o io.o graph.o refs.o request.o line.o keys.o repo.o options.o $(COMPAT_OBJS)
 tig: $(TIG_OBJS)
 
 TEST_GRAPH_OBJS = tools/test-graph.o util.o io.o graph.o

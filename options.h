@@ -80,5 +80,13 @@ struct options {
 #undef OPT_
 };
 
+extern struct options opt;
+
+int load_options(void);
+int load_git_config(void);
+
+enum status_code set_option(const char *opt, char *value);
+enum status_code parse_int(int *opt, const char *arg, int min, int max);
+
 #endif
 /* vim: set ts=8 sw=8 noexpandtab: */
