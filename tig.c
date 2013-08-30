@@ -45,262 +45,6 @@ struct menu_item {
 
 static bool prompt_menu(const char *prompt, const struct menu_item *items, int *selected);
 
-#define GRAPHIC_ENUM(_) \
-	_(GRAPHIC, ASCII), \
-	_(GRAPHIC, DEFAULT), \
-	_(GRAPHIC, UTF_8)
-
-DEFINE_ENUM(graphic, GRAPHIC_ENUM);
-
-#define DATE_ENUM(_) \
-	_(DATE, NO), \
-	_(DATE, DEFAULT), \
-	_(DATE, LOCAL), \
-	_(DATE, RELATIVE), \
-	_(DATE, SHORT)
-
-DEFINE_ENUM(date, DATE_ENUM);
-
-struct time {
-	time_t sec;
-	int tz;
-};
-
-static inline int timecmp(const struct time *t1, const struct time *t2)
-{
-	return t1->sec - t2->sec;
-}
-
-static const char *
-mkdate(const struct time *time, enum date date)
-{
-	static char buf[DATE_WIDTH + 1];
-	static const struct enum_map reldate[] = {
-		{ "second", 1,			60 * 2 },
-		{ "minute", 60,			60 * 60 * 2 },
-		{ "hour",   60 * 60,		60 * 60 * 24 * 2 },
-		{ "day",    60 * 60 * 24,	60 * 60 * 24 * 7 * 2 },
-		{ "week",   60 * 60 * 24 * 7,	60 * 60 * 24 * 7 * 5 },
-		{ "month",  60 * 60 * 24 * 30,	60 * 60 * 24 * 365 },
-		{ "year",   60 * 60 * 24 * 365, 0 },
-	};
-	struct tm tm;
-
-	if (!date || !time || !time->sec)
-		return "";
-
-	if (date == DATE_RELATIVE) {
-		struct timeval now;
-		time_t date = time->sec + time->tz;
-		time_t seconds;
-		int i;
-
-		gettimeofday(&now, NULL);
-		seconds = now.tv_sec < date ? date - now.tv_sec : now.tv_sec - date;
-		for (i = 0; i < ARRAY_SIZE(reldate); i++) {
-			if (seconds >= reldate[i].value && reldate[i].value)
-				continue;
-
-			seconds /= reldate[i].namelen;
-			if (!string_format(buf, "%ld %s%s %s",
-					   seconds, reldate[i].name,
-					   seconds > 1 ? "s" : "",
-					   now.tv_sec >= date ? "ago" : "ahead"))
-				break;
-			return buf;
-		}
-	}
-
-	if (date == DATE_LOCAL) {
-		time_t date = time->sec + time->tz;
-		localtime_r(&date, &tm);
-	}
-	else {
-		gmtime_r(&time->sec, &tm);
-	}
-	return strftime(buf, sizeof(buf), DATE_FORMAT, &tm) ? buf : NULL;
-}
-
-#define FILE_SIZE_ENUM(_) \
-	_(FILE_SIZE, NO), \
-	_(FILE_SIZE, DEFAULT), \
-	_(FILE_SIZE, UNITS)
-
-DEFINE_ENUM(file_size, FILE_SIZE_ENUM);
-
-static const char *
-mkfilesize(unsigned long size, enum file_size format)
-{
-	static char buf[64 + 1];
-	static const char relsize[] = {
-		'B', 'K', 'M', 'G', 'T', 'P'
-	};
-
-	if (!format)
-		return "";
-
-	if (format == FILE_SIZE_UNITS) {
-		const char *fmt = "%.0f%c";
-		double rsize = size;
-		int i;
-
-		for (i = 0; i < ARRAY_SIZE(relsize); i++) {
-			if (rsize > 1024.0 && i + 1 < ARRAY_SIZE(relsize)) {
-				rsize /= 1024;
-				continue;
-			}
-
-			size = rsize * 10;
-			if (size % 10 > 0)
-				fmt = "%.1f%c";
-
-			return string_format(buf, fmt, rsize, relsize[i])
-				? buf : NULL;
-		}
-	}
-
-	return string_format(buf, "%ld", size) ? buf : NULL;
-}
-
-#define AUTHOR_ENUM(_) \
-	_(AUTHOR, NO), \
-	_(AUTHOR, FULL), \
-	_(AUTHOR, ABBREVIATED), \
-	_(AUTHOR, EMAIL), \
-	_(AUTHOR, EMAIL_USER)
-
-DEFINE_ENUM(author, AUTHOR_ENUM);
-
-struct ident {
-	const char *name;
-	const char *email;
-};
-
-static const struct ident unknown_ident = { "Unknown", "unknown@localhost" };
-
-static inline int
-ident_compare(const struct ident *i1, const struct ident *i2)
-{
-	if (!i1 || !i2)
-		return (!!i1) - (!!i2);
-	if (!i1->name || !i2->name)
-		return (!!i1->name) - (!!i2->name);
-	return strcmp(i1->name, i2->name);
-}
-
-static const char *
-get_author_initials(const char *author)
-{
-	static char initials[AUTHOR_WIDTH * 6 + 1];
-	size_t pos = 0;
-	const char *end = strchr(author, '\0');
-
-#define is_initial_sep(c) (isspace(c) || ispunct(c) || (c) == '@' || (c) == '-')
-
-	memset(initials, 0, sizeof(initials));
-	while (author < end) {
-		unsigned char bytes;
-		size_t i;
-
-		while (author < end && is_initial_sep(*author))
-			author++;
-
-		bytes = utf8_char_length(author, end);
-		if (bytes >= sizeof(initials) - 1 - pos)
-			break;
-		while (bytes--) {
-			initials[pos++] = *author++;
-		}
-
-		i = pos;
-		while (author < end && !is_initial_sep(*author)) {
-			bytes = utf8_char_length(author, end);
-			if (bytes >= sizeof(initials) - 1 - i) {
-				while (author < end && !is_initial_sep(*author))
-					author++;
-				break;
-			}
-			while (bytes--) {
-				initials[i++] = *author++;
-			}
-		}
-
-		initials[i++] = 0;
-	}
-
-	return initials;
-}
-
-static const char *
-get_email_user(const char *email)
-{
-	static char user[AUTHOR_WIDTH * 6 + 1];
-	const char *end = strchr(email, '@');
-	int length = end ? end - email : strlen(email);
-
-	string_format(user, "%.*s%c", length, email, 0);
-	return user;
-}
-
-#define author_trim(cols) (cols == 0 || cols > 10)
-
-static const char *
-mkauthor(const struct ident *ident, int cols, enum author author)
-{
-	bool trim = author_trim(cols);
-	bool abbreviate = author == AUTHOR_ABBREVIATED || !trim;
-
-	if (author == AUTHOR_NO || !ident)
-		return "";
-	if (author == AUTHOR_EMAIL && ident->email)
-		return ident->email;
-	if (author == AUTHOR_EMAIL_USER && ident->email)
-		return get_email_user(ident->email);
-	if (abbreviate && ident->name)
-		return get_author_initials(ident->name);
-	return ident->name;
-}
-
-static const char *
-mkmode(mode_t mode)
-{
-	if (S_ISDIR(mode))
-		return "drwxr-xr-x";
-	else if (S_ISLNK(mode))
-		return "lrwxrwxrwx";
-	else if (S_ISGITLINK(mode))
-		return "m---------";
-	else if (S_ISREG(mode) && mode & S_IXUSR)
-		return "-rwxr-xr-x";
-	else if (S_ISREG(mode))
-		return "-rw-r--r--";
-	else
-		return "----------";
-}
-
-#define FILENAME_ENUM(_) \
-	_(FILENAME, NO), \
-	_(FILENAME, ALWAYS), \
-	_(FILENAME, AUTO)
-
-DEFINE_ENUM(filename, FILENAME_ENUM);
-
-#define IGNORE_SPACE_ENUM(_) \
-	_(IGNORE_SPACE, NO), \
-	_(IGNORE_SPACE, ALL), \
-	_(IGNORE_SPACE, SOME), \
-	_(IGNORE_SPACE, AT_EOL)
-
-DEFINE_ENUM(ignore_space, IGNORE_SPACE_ENUM);
-
-#define COMMIT_ORDER_ENUM(_) \
-	_(COMMIT_ORDER, DEFAULT), \
-	_(COMMIT_ORDER, TOPO), \
-	_(COMMIT_ORDER, DATE), \
-	_(COMMIT_ORDER, REVERSE)
-
-DEFINE_ENUM(commit_order, COMMIT_ORDER_ENUM);
-
 #define VIEW_INFO(_) \
 	_(MAIN,   main,   ref_head), \
 	_(DIFF,   diff,   ref_commit), \
@@ -1407,23 +1151,20 @@ parse_bool_matched(bool *opt, const char *arg, bool *matched)
 #define parse_bool(opt, arg) parse_bool_matched(opt, arg, NULL)
 
 static enum status_code
-parse_enum_do(unsigned int *opt, const char *arg,
-	      const struct enum_map *map, size_t map_size)
+parse_enum(unsigned int *opt, const char *arg,
+	   const struct enum_map_info *map_info)
 {
 	bool is_true;
 
-	assert(map_size > 1);
+	assert(map_info->size > 1);
 
-	if (map_enum_do(map, map_size, (int *) opt, arg))
+	if (map_enum_do(map_info->map, map_info->size, (int *) opt, arg))
 		return SUCCESS;
 
 	parse_bool(&is_true, arg);
-	*opt = is_true ? map[1].value : map[0].value;
+	*opt = is_true ? map_info->map[1].value : map_info->map[0].value;
 	return SUCCESS;
 }
-
-#define parse_enum(opt, arg, map) \
-	parse_enum_do(opt, arg, map, ARRAY_SIZE(map))
 
 static enum status_code
 parse_string(char *opt, const char *arg, size_t optsize)
@@ -2609,36 +2350,36 @@ redraw_display(bool clear)
  */
 
 #define TOGGLE_MENU_INFO(_) \
-	_(LINENO,    '.', "line numbers",      &opt_line_number, NULL, 0, VIEW_NO_FLAGS), \
-	_(DATE,      'D', "dates",             &opt_date, date_map, ARRAY_SIZE(date_map), VIEW_NO_FLAGS), \
-	_(AUTHOR,    'A', "author",            &opt_author, author_map, ARRAY_SIZE(author_map), VIEW_NO_FLAGS), \
-	_(GRAPHIC,   '~', "graphics",          &opt_line_graphics, graphic_map, ARRAY_SIZE(graphic_map), VIEW_NO_FLAGS), \
-	_(REV_GRAPH, 'g', "revision graph",    &opt_rev_graph, NULL, 0, VIEW_LOG_LIKE), \
-	_(FILENAME,  '#', "file names",        &opt_filename, filename_map, ARRAY_SIZE(filename_map), VIEW_NO_FLAGS), \
-	_(FILE_SIZE, '*', "file sizes",        &opt_file_size, file_size_map, ARRAY_SIZE(file_size_map), VIEW_NO_FLAGS), \
-	_(IGNORE_SPACE, 'W', "space changes",  &opt_ignore_space, ignore_space_map, ARRAY_SIZE(ignore_space_map), VIEW_DIFF_LIKE), \
-	_(COMMIT_ORDER, 'l', "commit order",   &opt_commit_order, commit_order_map, ARRAY_SIZE(commit_order_map), VIEW_LOG_LIKE), \
-	_(REFS,      'F', "reference display", &opt_show_refs, NULL, 0, VIEW_NO_FLAGS), \
-	_(CHANGES,   'C', "local change display", &opt_show_changes, NULL, 0, VIEW_NO_FLAGS), \
-	_(ID,        'X', "commit ID display", &opt_show_id, NULL, 0, VIEW_NO_FLAGS), \
-	_(FILES,     '%', "file filtering",    &opt_file_filter, NULL, 0, VIEW_DIFF_LIKE | VIEW_LOG_LIKE), \
-	_(TITLE_OVERFLOW, '$', "commit title overflow display", &opt_show_title_overflow, NULL, 0, VIEW_NO_FLAGS), \
-	_(UNTRACKED_DIRS, 'd', "untracked directory info", &opt_untracked_dirs_content, NULL, 0, VIEW_STATUS_LIKE), \
+	_(LINENO,    '.', "line numbers",      &opt_line_number, NULL, VIEW_NO_FLAGS), \
+	_(DATE,      'D', "dates",             &opt_date, date_map, VIEW_NO_FLAGS), \
+	_(AUTHOR,    'A', "author",            &opt_author, author_map, VIEW_NO_FLAGS), \
+	_(GRAPHIC,   '~', "graphics",          &opt_line_graphics, graphic_map, VIEW_NO_FLAGS), \
+	_(REV_GRAPH, 'g', "revision graph",    &opt_rev_graph, NULL, VIEW_LOG_LIKE), \
+	_(FILENAME,  '#', "file names",        &opt_filename, filename_map, VIEW_NO_FLAGS), \
+	_(FILE_SIZE, '*', "file sizes",        &opt_file_size, file_size_map, VIEW_NO_FLAGS), \
+	_(IGNORE_SPACE, 'W', "space changes",  &opt_ignore_space, ignore_space_map, VIEW_DIFF_LIKE), \
+	_(COMMIT_ORDER, 'l', "commit order",   &opt_commit_order, commit_order_map, VIEW_LOG_LIKE), \
+	_(REFS,      'F', "reference display", &opt_show_refs, NULL, VIEW_NO_FLAGS), \
+	_(CHANGES,   'C', "local change display", &opt_show_changes, NULL, VIEW_NO_FLAGS), \
+	_(ID,        'X', "commit ID display", &opt_show_id, NULL, VIEW_NO_FLAGS), \
+	_(FILES,     '%', "file filtering",    &opt_file_filter, NULL, VIEW_DIFF_LIKE | VIEW_LOG_LIKE), \
+	_(TITLE_OVERFLOW, '$', "commit title overflow display", &opt_show_title_overflow, NULL, VIEW_NO_FLAGS), \
+	_(UNTRACKED_DIRS, 'd', "untracked directory info", &opt_untracked_dirs_content, NULL, VIEW_STATUS_LIKE), \
 
 static enum view_flag
 toggle_option(struct view *view, enum request request, char msg[SIZEOF_STR])
 {
 	const struct {
 		enum request request;
-		const struct enum_map *map;
+		const struct enum_map_info *map_info;
 		size_t map_size;
 		enum view_flag reload_flags;
 	} data[] = {
-#define DEFINE_TOGGLE_DATA(id, key, help, value, map, map_size, vflags) { REQ_TOGGLE_ ## id, map, map_size, vflags  }
+#define DEFINE_TOGGLE_DATA(id, key, help, value, map, vflags) { REQ_TOGGLE_ ## id, map, vflags  }
 		TOGGLE_MENU_INFO(DEFINE_TOGGLE_DATA)
 	};
 	const struct menu_item menu[] = {
-#define DEFINE_TOGGLE_MENU(id, key, help, value, map, map_size, vflags) { key, help, value }
+#define DEFINE_TOGGLE_MENU(id, key, help, value, map, vflags) { key, help, value }
 		TOGGLE_MENU_INFO(DEFINE_TOGGLE_MENU)
 		{ 0 }
 	};
@@ -2654,23 +2395,23 @@ toggle_option(struct view *view, enum request request, char msg[SIZEOF_STR])
 			die("Invalid request (%d)", request);
 	}
 
-	if (data[i].map != NULL) {
+	if (data[i].map_info != NULL) {
 		unsigned int *opt = menu[i].data;
 
 		*opt = (*opt + 1) % data[i].map_size;
-		if (data[i].map == ignore_space_map) {
+		if (data[i].map_info == ignore_space_map) {
 			update_ignore_space_arg();
 			string_format_size(msg, SIZEOF_STR,
-				"Ignoring %s %s", enum_name(data[i].map[*opt]), menu[i].text);
+				"Ignoring %s %s", enum_name(data[i].map_info->map[*opt]), menu[i].text);
 
-		} else if (data[i].map == commit_order_map) {
+		} else if (data[i].map_info == commit_order_map) {
 			update_commit_order_arg();
 			string_format_size(msg, SIZEOF_STR,
-				"Using %s %s", enum_name(data[i].map[*opt]), menu[i].text);
+				"Using %s %s", enum_name(data[i].map_info->map[*opt]), menu[i].text);
 
 		} else {
 			string_format_size(msg, SIZEOF_STR,
-				"Displaying %s %s", enum_name(data[i].map[*opt]), menu[i].text);
+				"Displaying %s %s", enum_name(data[i].map_info->map[*opt]), menu[i].text);
 		}
 
 	} else {
@@ -3972,109 +3713,6 @@ update_diff_context(enum request request)
 	}
 
 	return diff_context != opt_diff_context;
-}
-
-DEFINE_ALLOCATOR(realloc_authors, struct ident *, 256)
-
-/* Small author cache to reduce memory consumption. It uses binary
- * search to lookup or find place to position new entries. No entries
- * are ever freed. */
-static struct ident *
-get_author(const char *name, const char *email)
-{
-	static struct ident **authors;
-	static size_t authors_size;
-	int from = 0, to = authors_size - 1;
-	struct ident *ident;
-
-	while (from <= to) {
-		size_t pos = (to + from) / 2;
-		int cmp = strcmp(name, authors[pos]->name);
-
-		if (!cmp)
-			return authors[pos];
-
-		if (cmp < 0)
-			to = pos - 1;
-		else
-			from = pos + 1;
-	}
-
-	if (!realloc_authors(&authors, authors_size, 1))
-		return NULL;
-	ident = calloc(1, sizeof(*ident));
-	if (!ident)
-		return NULL;
-	ident->name = strdup(name);
-	ident->email = strdup(email);
-	if (!ident->name || !ident->email) {
-		free((void *) ident->name);
-		free(ident);
-		return NULL;
-	}
-
-	memmove(authors + from + 1, authors + from, (authors_size - from) * sizeof(*authors));
-	authors[from] = ident;
-	authors_size++;
-
-	return ident;
-}
-
-static void
-parse_timesec(struct time *time, const char *sec)
-{
-	time->sec = (time_t) atol(sec);
-}
-
-static void
-parse_timezone(struct time *time, const char *zone)
-{
-	long tz;
-
-	tz  = ('0' - zone[1]) * 60 * 60 * 10;
-	tz += ('0' - zone[2]) * 60 * 60;
-	tz += ('0' - zone[3]) * 60 * 10;
-	tz += ('0' - zone[4]) * 60;
-
-	if (zone[0] == '-')
-		tz = -tz;
-
-	time->tz = tz;
-	time->sec -= tz;
-}
-
-/* Parse author lines where the name may be empty:
- *	author  <email@address.tld> 1138474660 +0100
- */
-static void
-parse_author_line(char *ident, const struct ident **author, struct time *time)
-{
-	char *nameend = strchr(ident, '<');
-	char *emailend = strchr(ident, '>');
-	const char *name, *email = "";
-
-	if (nameend && emailend)
-		*nameend = *emailend = 0;
-	name = chomp_string(ident);
-	if (nameend)
-		email = chomp_string(nameend + 1);
-	if (!*name)
-		name = *email ? email : unknown_ident.name;
-	if (!*email)
-		email = *name ? name : unknown_ident.email;
-
-	*author = get_author(name, email);
-
-	/* Parse epoch and timezone */
-	if (time && emailend && emailend[1] == ' ') {
-		char *secs = emailend + 2;
-		char *zone = strchr(secs, ' ');
-
-		parse_timesec(time, secs);
-
-		if (zone && strlen(zone) == STRING_SIZE(" +0700"))
-			parse_timezone(time, zone + 1);
-	}
 }
 
 static struct line *
