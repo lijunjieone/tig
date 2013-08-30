@@ -13,6 +13,7 @@
 
 #include "../tig.h"
 #include "../request.h"
+#include "../util.h"
 
 struct doc_action_iterator {
 	bool end_group;
