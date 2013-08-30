@@ -91,11 +91,9 @@ static char opt_path[SIZEOF_STR]	= "";
 static char opt_file[SIZEOF_STR]	= "";
 static char opt_ref[SIZEOF_REF]		= "";
 static unsigned long opt_goto_line	= 0;
-static iconv_t opt_iconv_out		= ICONV_NONE;
 static char opt_search[SIZEOF_STR]	= "";
 static char opt_editor[SIZEOF_STR]	= "";
 static bool opt_editor_lineno		= TRUE;
-static FILE *opt_tty			= NULL;
 static const char **opt_diff_argv	= NULL;
 static const char **opt_rev_argv	= NULL;
 static const char **opt_file_argv	= NULL;
@@ -106,6 +104,10 @@ static int opt_id_cols			= ID_WIDTH;
 static bool opt_file_filter		= TRUE;
 static bool opt_show_title_overflow	= FALSE;
 static int opt_title_overflow		= 50;
+
+/* Environment-based options. */
+static FILE *opt_tty			= NULL;
+static iconv_t opt_iconv_out		= ICONV_NONE;
 static char opt_env_lines[64]		= "";
 static char opt_env_columns[64]		= "";
 static char *opt_env[]			= { opt_env_lines, opt_env_columns, NULL };
